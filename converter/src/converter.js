@@ -50,103 +50,150 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict'
 
-const SHIFTED_HEX_CHARS = 'abcdefghijklmnop';
-const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
+import crypto from 'qubic-crypto';
 
-export const bytesToShiftedHex = function (bytes) {
-  let hex = '';
-  for (let i = 0; i < bytes.length; i++) {
-    hex += SHIFTED_HEX_CHARS[bytes[i] >> 4] + SHIFTED_HEX_CHARS[bytes[i] & 15];
-  }
+const LE = true;
 
-  return hex.toUpperCase();
-};
-
-export const publicKeyStringToBytes = function (s) {
-  const publicKeyBytes = new Uint8Array(32);
-  const view = new DataView(publicKeyBytes.buffer, 0);
-
-  for (let i = 0; i < 4; i++) {
-    view.setBigUint64(i * 8, 0n, true);
-    for (let j = 14; j-- > 0; ) {
-      view.setBigUint64(i * 8, view.getBigUint64(i * 8, true) * 26n + BigInt(s.charCodeAt(i * 14 + j)) - BigInt('A'.charCodeAt(0)), true);
-    }
-  }
-
-  return publicKeyBytes;
-};
+export const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 
 export const bytes32ToString = function (bytes) {
-  const hex = bytesToShiftedHex(bytes);
-  const buffer = new Uint8Array(32);
-  const view = new DataView(buffer.buffer, 0);
+  if (Object.prototype.toString.call(bytes) !== '[object Uint8Array]') {
+    throw new TypeError('Invalid bytes. Ecpected Uint8Array.');
+  }
+  if (bytes.byteLength !== 32) {
+    throw new RangeError('Invalid byte length.');
+  }
+
+  const view = new DataView(bytes.buffer);
   let s = '';
 
-  for (let i = 0; i < bytes.length; i++) {
-    view.setUint8(
-      i,
-      ((hex.charCodeAt(i << 1) - 'A'.charCodeAt(0)) << 4) |
-        (hex.charCodeAt((i << 1) + 1) - 'A'.charCodeAt(0)),
-      true
-    );
-  }
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 4; i++){
+    let fragment = view.getBigUint64(i << 3, LE);
     for (let j = 0; j < 14; j++) {
-      s += String.fromCharCode(
-        Number((view.getBigUint64(i * 8, true) % 26n) + BigInt('A'.charCodeAt(0)))
-      );
-      view.setBigUint64(i * 8, view.getBigUint64(i * 8, true) / 26n, true);
+      s += String.fromCharCode(Number(fragment % 26n + BigInt('A'.charCodeAt(0))));
+      fragment /= 26n;
     }
   }
 
   return s.toLowerCase();
 };
 
-export const digestBytesToString = bytes32ToString;
-
-export const publicKeyBytesToString = function (bytes) {
-  if (bytes.length === 32) {
-    return bytes32ToString(bytes).toUpperCase();
+export const stringToBytes32 = function (s) {
+  if (new RegExp(`^[a-z]{${4 * 14}}$`).test(s) === false) {
+    throw new Error(`Invalid string. Expected ${4 * 14} lowercase latin chars.`);
   }
 
-  const hex = bytesToShiftedHex(bytes);
-  const buffer = new Uint8Array(40);
-  const view = new DataView(buffer.buffer, 0);
-  let s = '';
+  s = s.toUpperCase();
 
-  for (let i = 0; i < bytes.length; i++) {
-    view.setUint8(
-      i,
-      ((hex.charCodeAt(i << 1) - 'A'.charCodeAt(0)) << 4) |
-        (hex.charCodeAt((i << 1) + 1) - 'A'.charCodeAt(0)),
-      true
-    );
-  }
+  const bytes = new Uint8Array(32);
+  const view = new DataView(bytes.buffer);
+
   for (let i = 0; i < 4; i++) {
-    for (let j = 0; j < 14; j++) {
-      s += String.fromCharCode(
-        Number((view.getBigUint64(i * 8, true) % 26n) + BigInt('A'.charCodeAt(0)))
-      );
-      view.setBigUint64(i * 8, view.getBigUint64(i * 8, true) / 26n, true);
+    view.setBigUint64(i * 8, 0n, LE);
+    for (let j = 14; j-- > 0;) {
+      view.setBigUint64(i * 8, view.getBigUint64(i * 8, LE) * 26n + BigInt(s.charCodeAt(i * 14 + j)) - BigInt('A'.charCodeAt(0)), LE);
     }
   }
 
-  view.setBigUint64(32, view.getBigUint64(32, true) & 0x3ffffn, true);
-
-  for (let i = 0; i < 4; i++) {
-    s += String.fromCharCode(
-      Number((view.getBigUint64(32, true) % 26n) + BigInt('A'.charCodeAt(0)))
-    );
-    view.setBigUint64(32, view.getBigUint64(32, true) / 26n, true);
-  }
-
-  return s.toUpperCase();
+  return bytes;
 };
 
-export const seedStringToBytes = function (seed) {
-  const bytes = new Uint8Array(seed.length);
-  for (let i = 0; i < seed.length; i++) {
-    bytes[i] = ALPHABET.indexOf(seed[i]);
+export const bytes64ToString = function (bytes) {
+  if (Object.prototype.toString.call(bytes) !== '[object Uint8Array]') {
+    throw new TypeError('Invalid bytes. Ecpected Uint8Array.');
+  }
+  if (bytes.byteLength !== 64) {
+    throw new RangeError('Invalid byte length.');
+  }
+
+  return bytes32ToString(bytes.subarray(0, 32)) + bytes32ToString(bytes.subarray(32, 64));
+}
+
+export const stringToBytes64 = function (s) {
+  if (new RegExp(`^[a-z]{${4 * 14 * 2}}$`).test(s) === false) {
+    throw new Error(`Invalid string. Expected ${4 * 14 * 2} lowercase latin chars.`);
+  }
+
+  const bytes = new Uint8Array(64);
+  bytes.set(stringToBytes32(string.slice(0, 4 * 14)), 0);
+  bytes.set(stringToBytes32(string.slice(4 * 14, 4 * 14 * 2)), 32);
+  return bytes;
+}
+
+const checksum = async function (publicKey) {
+  const { K12 } = await crypto;
+  const buffer = new Uint8Array(crypto.CHECKSUM_LENGTH);
+  K12(publicKey, buffer, crypto.CHECKSUM_LENGTH);
+
+  let checksum = new DataView(buffer.buffer).getUint32(0, LE) & 0x3FFFF;
+  let s = '';
+
+  for (let i = 0; i < 4; i++) {
+    s += String.fromCharCode(checksum % 26 + 'A'.charCodeAt(0));
+    checksum /= 26;
+  }
+
+  return s;
+};
+
+export const publicKeyBytesToString = async function (bytes) {
+  return bytes32ToString(bytes).toUpperCase() + (await checksum(bytes));
+};
+
+export const stringToPublicKeyBytes = async function (s) {
+  if (new RegExp(`^[A-Z]{${60}}$`).test(s) === false) {
+    throw new Error('Invalid public key string. Expected 60 uppercase latin chars.');
+  }
+
+  const bytes = stringToBytes32(s.slice(0, 56).toLowerCase());
+
+  if ((await checksum(bytes)) !== s.slice(56, 60)) {
+    throw new Error('Invalid checksum!');
+  }
+
+  return bytes;
+};
+
+export const digestBytesToString = bytes32ToString;
+
+export const stringToDigestBytes = stringToBytes32;
+
+const HEX_ALPHABET = '0123456789abcdef';
+const SHIFTED_HEX_ALPHABET = 'abcdefghijklmnop';
+
+export const shiftedHexToBytes = function (s) {
+  if (/[a-p]/.test(s) === false) {
+    throw new TypeError('Invalid shifted hex string.');
+  }
+
+  if (s.length % 2 !== 0) {
+    s = 'a' + s;
+  }
+
+  const bytes = new Uint8Array(s.length / 2);
+  for (let i = 0, j = 0; j < s.length; j += 2) {
+    bytes[i++] = parseInt(s.substr(j, 2).split('').map((char) => HEX_ALPHABET[SHIFTED_HEX_ALPHABET.indexOf(char)]).join(''), 16);
   }
   return bytes;
 };
+
+export const bytesToShiftedHex = function (bytes) {
+  if (Object.prototype.toString.call(bytes) !== '[object Uint8Array]') {
+    throw new TypeError('Invalid bytes. Ecpected Uint8Array.');
+  }
+
+  let s = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    s += SHIFTED_HEX_CHARS[bytes[i] >> 4] + SHIFTED_HEX_CHARS[bytes[i] & 15];
+  }
+  return s;
+};
+
+export const stringToSeedBytes = function (s) {
+  const bytes = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) {
+    bytes[i] = ALPHABET.indexOf(s[i]);
+  }
+  s = undefined;
+  return bytes;
+}

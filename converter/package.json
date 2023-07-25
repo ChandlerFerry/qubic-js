@@ -7,6 +7,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "dependencies": {
+    "qubic-crypto": "workspace:*"
+  },
   "keywords": [],
   "author": "Chris Dukakis<chrisdukakis@gmail.com>"
 }

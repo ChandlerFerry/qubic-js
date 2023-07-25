@@ -48,50 +48,30 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 */
 
-'use strict'
+'use strict';
 
-import { NUMBER_OF_CHANNELS } from 'qubic-gossip';
+import { stringToPublicKeyBytes } from 'qubic-converter';
 
-const ALIGNMENT_THRESHOLD = 2 / 3;
+export const LE = true;
 
-export const computorsAlignmentTester = function () {
-  const digestsToCompare = Array(NUMBER_OF_CHANNELS);
-  const epochsByDigest = new Map();
+export const ARBITRATOR_PUBLIC_KEY = 'AFZPUAIYVPNUYGJRQVLUKOPPVLHAZQTGLYAAUUNBXFTVTAMSBKQBLEIEPCVJ';
+export const ARBITRATOR_PUBLIC_KEY_BYTES = stringToPublicKeyBytes(ARBITRATOR_PUBLIC_KEY);
 
-  const test = function (epochCandidate, digest, channel) {
-    epochsByDigest.set(digest, epochCandidate);
+export const SEED_LENGTH = 55;
 
-    if (epochCandidate >= (epochsByDigest.get(digestsToCompare[channel]) || 0)) {
-      digestsToCompare[channel] = digest;
-    
-      let numbersOfAlignedValuesByDigest = {};
-      for (let i = 0; i < NUMBER_OF_CHANNELS; i++) {
-        if (numbersOfAlignedValuesByDigest[digestsToCompare[i]] === undefined) {
-          numbersOfAlignedValuesByDigest[digestsToCompare[i]] = 1;
-        } else {
-          numbersOfAlignedValuesByDigest[digestsToCompare[i]]++;
-        }
-      }
+export const NUMBER_OF_COMPUTORS = 676;
+export const QUORUM = Math.floor(NUMBER_OF_COMPUTORS  * 2 / 3 + 1);
 
-      let n = 0;
-      let epoch = 0;
-      for (const d of Object.keys(numbersOfAlignedValuesByDigest)) {
-        if (numbersOfAlignedValuesByDigest[d] > n) {
-          epoch = epochsByDigest.get(d) || 0;
-          n = numbersOfAlignedValuesByDigest[d];
-        }
-      }
+export const TARGET_TICK_DURATION = 5000;
+export const MAX_NUMBER_OF_TICKS_PER_EPOCH = (((((60 * 60 * 24 * 7) / (TARGET_TICK_DURATION / 1000)) + NUMBER_OF_COMPUTORS - 1) / NUMBER_OF_COMPUTORS) * NUMBER_OF_COMPUTORS);
 
-      const alignment = n / NUMBER_OF_CHANNELS;
-      if (alignment >= ALIGNMENT_THRESHOLD) {
-        return {
-          epoch,
-          alignment,
-        }
-      }
-    }
-    return false;
-  };
+export const ALIGNMENT_THRESHOLD = 2 / 3;
 
-  return test;
-};
+export const ISSUANCE_RATE = 1000000000000n;
+export const MAX_ENERGY_AMOUNT  = ISSUANCE_RATE * 1000n;
+
+export const MAX_TRANSACTION_SIZE = 1024;
+export const TRANSACTION_PUBLICATION_TICK_OFFSET = 4;
+export const OWN_TRANSACTION_REBROADCAST_TIMEOUT = 1000;
+
+export const NUMBER_OF_CHANNELS = 4;

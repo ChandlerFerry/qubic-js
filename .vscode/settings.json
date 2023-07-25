@@ -1,0 +1,25 @@
+{
+  "files.associations": {
+    "__functional_base": "cpp",
+    "array": "cpp",
+    "istream": "cpp",
+    "locale": "cpp",
+    "memory": "cpp",
+    "tuple": "cpp",
+    "utility": "cpp",
+    "*.tcc": "cpp",
+    "functional": "cpp",
+    "chrono": "cpp",
+    "__locale": "cpp",
+    "__string": "cpp",
+    "string": "cpp",
+    "string_view": "cpp",
+    "algorithm": "cpp",
+    "limits": "cpp",
+    "random": "cpp",
+    "semaphore": "cpp",
+    "__node_handle": "cpp",
+    "optional": "cpp",
+    "system_error": "cpp"
+  }
+}

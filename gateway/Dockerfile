@@ -10,6 +10,6 @@ RUN mkdir gateway
 COPY ./gateway/package.json ./gateway
 COPY . .
 
-RUN cd gateway && pnpm fetch --prod
-RUN CI=true pnpm i --prod --frozen-lockfile
+RUN cd gateway
+RUN pnpm i
 CMD [ "node", "./gateway/src/gateway.js" ]

@@ -198,7 +198,6 @@ const crypto = new Promise(function (resolve) {
       },
       K12,
       keccakP160012,
-      KECCAK_STATE_LENGTH: 200,
     });
   };
 });
@@ -208,7 +207,7 @@ crypto.KECCAK_STATE_LENGTH = 200;
 crypto.SIGNATURE_LENGTH = 64;
 crypto.PRIVATE_KEY_LENGTH = 32;
 crypto.PUBLIC_KEY_LENGTH = 32;
-crypto.CHECKSUM_LENGTH = 8;
+crypto.CHECKSUM_LENGTH = 4;
 crypto.DIGEST_LENGTH = 32;
 crypto.NONCE_LENGTH = 32;
 

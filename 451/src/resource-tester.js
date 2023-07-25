@@ -51,23 +51,11 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 'use strict';
 
 import crypto from 'qubic-crypto';
-import { bytes32ToString, digestBytesToString, publicKeyBytesToString } from 'qubic-converter';
-import { MESSAGE_TYPES, RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET } from 'qubic-gossip';
+import { bytes32ToString, publicKeyBytesToString } from 'qubic-converter';
+import { SOURCE_OFFSET } from './transaction.js';
 import { isZero } from './is-zero.js';
 
 const NUMBER_OF_LINKS_PER_NEURON = 2;
-const NUMBER_OF_SOLUTION_NONCES = 1000;
-const MILLISECOND_LENGTH = 2;
-const TIME_UNIT_LENGTH = 1
-const RESOURCE_TEST_SOLUTION_MILLISECOND_OFFSET = RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET + crypto.PUBLIC_KEY_LENGTH + 1;
-const RESOURCE_TEST_SOLUTION_SECOND_OFFSET = RESOURCE_TEST_SOLUTION_MILLISECOND_OFFSET + MILLISECOND_LENGTH;
-const RESOURCE_TEST_SOLUTION_MINUTE_OFFSET = RESOURCE_TEST_SOLUTION_SECOND_OFFSET + TIME_UNIT_LENGTH;
-const RESOURCE_TEST_SOLUTION_HOUR_OFFSET = RESOURCE_TEST_SOLUTION_MINUTE_OFFSET + TIME_UNIT_LENGTH;
-const RESOURCE_TEST_SOLUTION_MONTH_OFFSET = RESOURCE_TEST_SOLUTION_HOUR_OFFSET + TIME_UNIT_LENGTH;
-const RESOURCE_TEST_SOLUTION_YEAR_OFFSET = RESOURCE_TEST_SOLUTION_MONTH_OFFSET + TIME_UNIT_LENGTH;
-const RESOURCE_TEST_SOLUTION_NONCES_OFFSET = RESOURCE_TEST_SOLUTION_YEAR_OFFSET + TIME_UNIT_LENGTH;
-const RESOURCE_TEST_SOLUTION_NONCES_LENGTH = NUMBER_OF_SOLUTION_NONCES * crypto.NONCE_LENGTH;
-const RESOURCE_TEST_SOLUTION_SIGNATURE_OFFSET = RESOURCE_TEST_SOLUTION_NONCES_OFFSET + RESOURCE_TEST_SOLUTION_NONCES_LENGTH;
 
 const random = function (publicKey, nonce, output) {
   const state = new Uint8Array(crypto.KECCAK_STATE_LENGTH).fill(0);
@@ -97,103 +85,81 @@ export const resourceTester = function () {
   const parameters = {};
   const miningData = new BigUint64Array(65536);
   const noncesByPublicKey = new Map();
-  const offsetsByPublicKey = new Map();
+  const scoresByPublicKey = new Map();
 
-  const resourceTest = async function(resourceTestSolution) {
+  const resourceTest = async function(transaction) {
     const { K12, schnorrq } = await crypto;
-    const resourceTestSolutionView = new DataView(resourceTestSolution.buffer);
 
-    const computorPublicKey = resourceTestSolution.slice(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET + crypto.PUBLIC_KEY_LENGTH);
+    const computorPublicKey = transaction.slice(SOURCE_OFFSET, SOURCE_OFFSET + crypto.PUBLIC_KEY_LENGTH);
 
     if (isZero(computorPublicKey) === false) {
       const digest = new Uint8Array(crypto.DIGEST_LENGTH);
-      resourceTestSolutionView.setUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, resourceTestSolutionView.getUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION, true);
-      K12(resourceTestSolution.slice(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, RESOURCE_TEST_SOLUTION_SIGNATURE_OFFSET), digest, crypto.DIGEST_LENGTH);
-      resourceTestSolutionView.setUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, resourceTestSolutionView.getUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION, true);
+      K12(transaction.slice(SOURCE_OFFSET, transaction.length - crypto.SIGNATURE_LENGTH), digest, crypto.DIGEST_LENGTH);
 
-      if (schnorrq.verify(computorPublicKey, digest, resourceTestSolution.slice(RESOURCE_TEST_SOLUTION_SIGNATURE_OFFSET, RESOURCE_TEST_SOLUTION_SIGNATURE_OFFSET + crypto.SIGNATURE_LENGTH)) === 1) { // anti-spam
+      if (schnorrq.verify(computorPublicKey, digest, transaction.slice(-crypto.SIGNATURE_LENGTH)) === 1) { // anti-spam
         const computorPublicKeyString = publicKeyBytesToString(computorPublicKey);
 
         if (noncesByPublicKey.has(computorPublicKeyString) === false) {
           noncesByPublicKey.set(computorPublicKeyString, new Set());
         }
         
-        let score = offsetsByPublicKey.get(computorPublicKeyString)?.score || 0;
-        let i = offsetsByPublicKey.get(computorPublicKeyString)?.offset || 0;
-        for (; i < NUMBER_OF_SOLUTION_NONCES; i++) {
-          const nonce = resourceTestSolution.slice(RESOURCE_TEST_SOLUTION_NONCES_OFFSET + i * crypto.NONCE_LENGTH, RESOURCE_TEST_SOLUTION_NONCES_OFFSET + (i + 1) * crypto.NONCE_LENGTH);
+        const nonce = transaction.slice(transaction.length - crypto.SIGNATURE_LENGTH - crypto.NONCE_LENGTH + i * crypto.NONCE_LENGTH, transaction.length - crypto.SIGNATURE_LENGTH - crypto.NONCE_LENGTH + (i + 1) * crypto.NONCE_LENGTH);
+        const nonceString = bytes32ToString(nonce);
+        
+        if (noncesByPublicKey.get(computorPublicKeyString).has(nonceString) === false) {
+          noncesByPublicKey.get(computorPublicKeyString).add(nonceString);
+
+          const neuronLinks = new Uint32Array(parameters.numberOfNeurons * NUMBER_OF_LINKS_PER_NEURON);
+          random(computorPublicKey, nonce, neuronLinks);
           
-          if (isZero(nonce) === false) {
-            const nonceString = bytes32ToString(nonce);
-            
-            if (noncesByPublicKey.get(computorPublicKeyString).has(nonceString) === false) {
-              noncesByPublicKey.get(computorPublicKeyString).add(nonceString);
-
-              const neuronLinks = new Uint32Array(parameters.numberOfNeurons * NUMBER_OF_LINKS_PER_NEURON);
-              random(computorPublicKey, nonce, neuronLinks);
-              
-              for (let j = 0; j < parameters.numberOfNeurons * NUMBER_OF_LINKS_PER_NEURON; j += NUMBER_OF_LINKS_PER_NEURON) {
-                neuronLinks[j] %= parameters.numberOfNeurons;
-                neuronLinks[j + 1] %= parameters.numberOfNeurons;
-              }
-            
-              const neuronValues = new Uint8Array(parameters.numberOfNeurons).fill(0xFF);
-              let limiter = miningData.length;
-              let outputLength = 0;
-            
-              while (outputLength < (miningData.byteLength << 3)) {
-                const prevValue0 = neuronValues[parameters.numberOfNeurons - 1];
-                const prevValue1 = neuronValues[parameters.numberOfNeurons - 2];
-            
-                for (let j = 0; j < parameters.numberOfNeurons; j++) {
-                  neuronValues[j] = ~(neuronValues[neuronLinks[j * NUMBER_OF_LINKS_PER_NEURON]] & neuronValues[neuronLinks[j * NUMBER_OF_LINKS_PER_NEURON + 1]]);
-                }
-            
-                if (neuronValues[parameters.numberOfNeurons - 1] !== prevValue0 && neuronValues[parameters.numberOfNeurons - 2] === prevValue1) {
-                  if (((miningData[outputLength >> 6] >> BigInt(outputLength & 63)) & 1n) === 0n) {
-                    break;
-                  }
-            
-                  outputLength++;
-                } else {
-                  if (neuronValues[parameters.numberOfNeurons - 2] !== prevValue1 && neuronValues[parameters.numberOfNeurons - 1] === prevValue0) {
-                    if (((miningData[outputLength >> 6] >> BigInt(outputLength & 63)) & 1n) !== 0n) {
-                      break;
-                    }
-            
-                    outputLength++;
-                  } else {
-                    if (--limiter === 0) {
-                      break;
-                    }
-                  }
-                }
-              }
-
-              if (outputLength >= parameters.solutionThreshold) {
-                score++;
-              }
-            } else {
-              return false;
-            }
-          } else {
-            break;
+          for (let j = 0; j < parameters.numberOfNeurons * NUMBER_OF_LINKS_PER_NEURON; j += NUMBER_OF_LINKS_PER_NEURON) {
+            neuronLinks[j] %= parameters.numberOfNeurons;
+            neuronLinks[j + 1] %= parameters.numberOfNeurons;
           }
-        }
+        
+          const neuronValues = new Uint8Array(parameters.numberOfNeurons).fill(0xFF);
+          let limiter = miningData.length;
+          let outputLength = 0;
+        
+          while (outputLength < (miningData.byteLength << 3)) {
+            const prevValue0 = neuronValues[parameters.numberOfNeurons - 1];
+            const prevValue1 = neuronValues[parameters.numberOfNeurons - 2];
+        
+            for (let j = 0; j < parameters.numberOfNeurons; j++) {
+              neuronValues[j] = ~(neuronValues[neuronLinks[j * NUMBER_OF_LINKS_PER_NEURON]] & neuronValues[neuronLinks[j * NUMBER_OF_LINKS_PER_NEURON + 1]]);
+            }
+        
+            if (neuronValues[parameters.numberOfNeurons - 1] !== prevValue0 && neuronValues[parameters.numberOfNeurons - 2] === prevValue1) {
+              if (((miningData[outputLength >> 6] >> BigInt(outputLength & 63)) & 1n) === 0n) {
+                break;
+              }
+        
+              outputLength++;
+            } else {
+              if (neuronValues[parameters.numberOfNeurons - 2] !== prevValue1 && neuronValues[parameters.numberOfNeurons - 1] === prevValue0) {
+                if (((miningData[outputLength >> 6] >> BigInt(outputLength & 63)) & 1n) !== 0n) {
+                  break;
+                }
+        
+                outputLength++;
+              } else {
+                if (--limiter === 0) {
+                  break;
+                }
+              }
+            }
+          }
 
-        if (i > 0) {
-          offsetsByPublicKey.set(computorPublicKeyString, {  
-            offset: i,
-            score,
-          });
-        }
+          if (outputLength >= parameters.solutionThreshold) {
+            scoresByPublicKey.set(computorPublicKeyString, (scoresByPublicKey.get(computorPublicKeyString) || 0) + 1);
 
-        console.log(`Score [${computorPublicKeyString}]: ${score}`);
+            console.log(`Score [${computorPublicKeyString}]: ${scoresByPublicKey.get(computorPublicKeyString)}`);
 
-        return {
-          computorPublicKey,
-          score,
-          digest: digestBytesToString(digest),
+            return {
+              computorPublicKey: computorPublicKeyString,
+              score: scoresByPublicKey.get(computorPublicKeyString),
+            }
+          }
         }
       }
     }

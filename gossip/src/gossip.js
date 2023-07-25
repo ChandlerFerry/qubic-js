@@ -54,7 +54,6 @@ import EventEmitter from 'events';
 import WebSocket from 'isomorphic-ws';
 import wrtc from 'wrtc';
 import crypto from 'qubic-crypto';
-import { digestBytesToString } from 'qubic-converter';
 
 export const NUMBER_OF_CHANNELS = 4;
 const MIN_WEBRTC_CONNECTION_ATTEMPT_DURATION = 6 * 1000;
@@ -71,23 +70,70 @@ const SIGNAL_TYPES = {
 
 export const MESSAGE_TYPES = {
   EXCHANGE_PUBLIC_PEERS: 0,
-  BROADCAST_RESOURCE_TEST_SOLUTION: 1,
   BROADCAST_COMPUTORS: 2,
   BROADCAST_TICK: 3,
-  BROADCAST_REVENUES: 4,
   REQUEST_COMPUTORS: 11,
   BROADCAST_TRANSACTION: 24,
 };
 
-export const SIZE_OFFSET = 0;
-export const SIZE_LENGTH = 4;
+const SIZE_OFFSET = 0;
+const SIZE_LENGTH = 3;
+
+export const size = function (request) {
+  return (
+    request[SIZE_OFFSET] |
+    request[SIZE_OFFSET + 1] << 8 |
+    request[SIZE_OFFSET + 2] << 16
+  ) & 0xFFFFFF;
+};
+
+export const setSize = function (request, s) {
+  request[SIZE_OFFSET] = s;
+  request[SIZE_OFFSET + 1] = s >> 8;
+  request[SIZE_OFFSET + 2] = s >> 16;
+};
+
 export const PROTOCOL_VERSION_OFFSET = SIZE_OFFSET + SIZE_LENGTH;
-export const PROTOCOL_VERSION_LENGTH = 2;
-export const TYPE_OFFSET = PROTOCOL_VERSION_OFFSET + PROTOCOL_VERSION_LENGTH;
-export const TYPE_LENGTH = 2;
+export const PROTOCOL_VERSION_LENGTH = 1;
+export const DEJAVU_OFFSET = PROTOCOL_VERSION_OFFSET + PROTOCOL_VERSION_LENGTH;
+export const DEJAVU_LENGTH = 3;
+
+export const isZeroDejavu = function (request) {
+  let exp = request[DEJAVU_OFFSET];
+  for (let i = DEJAVU_OFFSET + 1; i < DEJAVU_OFFSET + DEJAVU_LENGTH; i++) {
+    exp |= request[i];
+  }
+  return !exp;
+};
+
+export const zeroDejavu = function (request) {
+  for (let i = DEJAVU_OFFSET; i < DEJAVU_OFFSET + DEJAVU_LENGTH; i++) {
+    request[i] = 0;
+  }
+};
+
+export const randomizeDezavu = function (request) {
+  const random = globalThis.crypto.getRandomValues(new Uint32Array(1))[0];
+  request[DEJAVU_OFFSET] = random;
+  request[DEJAVU_OFFSET + 1] = random >> 8;
+  request[DEJAVU_OFFSET + 2] = random >> 16;
+};
+
+export const TYPE_OFFSET = DEJAVU_OFFSET + DEJAVU_LENGTH;
+export const TYPE_LENGTH = 1;
 export const HEADER_LENGTH = TYPE_OFFSET + TYPE_LENGTH;
 
-export const RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET = HEADER_LENGTH;
+export const request = function (content, protocol, randomizeDezavuFlag, type) {
+  const packet = new Uint8Array(HEADER_LENGTH + content.byteLength);
+  setSize(packet, packet.byteLength);
+  packet[PROTOCOL_VERSION_OFFSET] = protocol;
+  if (randomizeDezavuFlag === true) {
+    randomizeDezavu(packet);
+  }
+  packet[TYPE_OFFSET] = type;
+  packet.set(content, HEADER_LENGTH);
+  return packet;
+};
 
 export const TICK_COMPUTOR_INDEX_OFFSET = HEADER_LENGTH;
 export const TICK_COMPUTOR_INDEX_LENGTH = 2;
@@ -97,14 +143,13 @@ export const TICK_TICK_OFFSET = TICK_EPOCH_OFFSET + TICK_EPOCH_LENGTH;
 export const TICK_TICK_LENGTH = 4;
 
 const MIN_COMPUTORS_PROPAGATION_TIMEOUT = 30 * 1000;
-const MIN_RESOURCE_TEST_SOLUTION_PROPAGATION_TIMEOUT = 30 * 1000;
 const MIN_TICK_PROPAGATION_TIMEOUT = 3 * 1000;
 const TICK_PROPAGATION_PROBABILTY = 1;
 
-const MAX_BIG_INT = 2n ** 64n - 1n;
-const TRANSACTION_DEJAVU_FALSE_POSITIVE_PROBABILITY = 0.1;
+const TRANSACTION_DEJAVU_FALSE_POSITIVE_PROBABILITY = 0.01;
 const TRANSACTION_DEJAVU_CAPACITY = 16000000;
 const TRANSACTION_DEJAVU_BIT_LENGTH = Math.ceil(-(TRANSACTION_DEJAVU_CAPACITY * Math.log(TRANSACTION_DEJAVU_FALSE_POSITIVE_PROBABILITY)) / (Math.log(2) ** 2));
+const TRANSACTION_DEJAVU_NUMBER_OF_HASH_INVOCATIONS = Math.round(-Math.log(TRANSACTION_DEJAVU_FALSE_POSITIVE_PROBABILITY) / Math.log(2));
 const NUMBER_OF_TRANSACTION_REBROADCASTINGS = 5;
 const TRANSACTION_REBROADCAST_TIMEOUT = 1000;
 
@@ -117,13 +162,14 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
 
   const dejavu = {
     computors: Array(NUMBER_OF_CHANNELS).fill(0),
-    resourceTestSolutionsByDigest: new Map(),
     ticksByComputorIndex: new Map(),
     transactions: new Uint8Array(TRANSACTION_DEJAVU_BIT_LENGTH / 8),
   };
 
-  const clearResourceTestSolutionsDejavu = function () {
-    dejavu.resourceTestSolutionsByDigest.clear();
+  const info = {
+    receivedBytes: 0,
+    transmittedBytes: 0,
+    discardedBytes: 0,
   }
 
   const propagateComputors = function (i, data, callback) {
@@ -135,40 +181,7 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
           if (channels[j]?.readyState === 'open') {
             dejavu.computors[j] = t;
             channels[j].send(data);
-            if (typeof callback === 'function') {
-              callback();
-            }
-          }
-        }
-      }
-    }
-  };
-
-  const propagateResourceTestingSolution = async function (i, data, digest, callback) {
-    if (digest === undefined) {
-      const resourceTestSolution = new Uint8Array(data);
-      const resourceTestSolutionView = new DataView(data);
-      const digestBytes = new Uint8Array(crypto.DIGEST_LENGTH);
-      const { K12 } = await crypto;
-      resourceTestSolutionView.setUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, resourceTestSolutionView.getUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION, true);
-      K12(resourceTestSolution.slice(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, resourceTestSolution.length - crypto.SIGNATURE_LENGTH), digestBytes, crypto.DIGEST_LENGTH);
-      resourceTestSolutionView.setUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, resourceTestSolutionView.getUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION, true);
-      digest = digestBytesToString(digestBytes);
-    }
-
-    const t = Date.now();
-    if (dejavu.resourceTestSolutionsByDigest.has(digest) === false) {
-      dejavu.resourceTestSolutionsByDigest.set(digest, Array(NUMBER_OF_CHANNELS).fill(0));
-    }
-
-    dejavu.resourceTestSolutionsByDigest.get(digest)[i] = t;
-
-    for (let j = 0; j < NUMBER_OF_CHANNELS; j++) {
-      if (i !== j) {
-        if (t - dejavu.resourceTestSolutionsByDigest.get(digest)[j] > MIN_RESOURCE_TEST_SOLUTION_PROPAGATION_TIMEOUT) {
-          if (channels[j]?.readyState === 'open') {
-            dejavu.resourceTestSolutionsByDigest.get(digest)[j] = t;
-            channels[j].send(data);
+            info.transmittedBytes += data.byteLength;
             if (typeof callback === 'function') {
               callback();
             }
@@ -202,6 +215,7 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
             if (channels[j]?.readyState === 'open') {
               dejavu.ticksByComputorIndex.get(computorIndex).get(tick)[j] = t;
               channels[j].send(data);
+              info.transmittedBytes += data.byteLength;
               if (typeof callback === 'function') {
                 callback();
               }
@@ -212,29 +226,36 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
     }
   };
 
-  const propagateTransaction = function (i, data, callback) {
+  const propagateTransaction = async function (i, data, callback) {
+    const transaction = new Uint8Array(data);
+    const dejavuDigest = new Uint8Array(8);
+    const { K12 } = await crypto;
     let n = 0;
-    for (let j = 0; j < Math.ceil((TRANSACTION_DEJAVU_BIT_LENGTH / TRANSACTION_DEJAVU_CAPACITY) * Math.log(2)); j++) {
-      const digest = new Uint8Array(8);
-      K12(new Uint8Array(data), digest, 8);
-      const k = Math.ceil((new DataView(digest.buffer).readBigUint64(0, true) * TRANSACTION_DEJAVU_BIT_LENGTH) / MAX_BIG_INT);
+
+    for (let j = 0; j < TRANSACTION_DEJAVU_NUMBER_OF_HASH_INVOCATIONS; j++) {
+      K12(i === 0 ? transaction : dejavuDigest, dejavuDigest, 8);
+      const k = Number((new DataView(dejavuDigest.buffer).getBigUint64(0, true) * BigInt(TRANSACTION_DEJAVU_BIT_LENGTH)) / 0xFFFFFFFFFFFFFFFFn);
       if ((dejavu.transactions[Math.floor(k / 8)] >>> (k - 8 * Math.floor(k / 8))) & 0x01) {
         n++;
+      } else {
+        break;
       }
     }
-    if (n === Math.ceil((TRANSACTION_DEJAVU_BIT_LENGTH / TRANSACTION_DEJAVU_CAPACITY) * Math.log(2))) {
-      for (let j = 0; j < Math.ceil((TRANSACTION_DEJAVU_BIT_LENGTH / TRANSACTION_DEJAVU_CAPACITY) * Math.log(2)); j++) {
-        const digest = new Uint8Array(8);
-        K12(new Uint8Array(data), digest, 8);
-        const k = Math.ceil((new DataView(digest.buffer).readBigUint64(0, true) * TRANSACTION_DEJAVU_BIT_LENGTH) / MAX_BIG_INT);
+
+    if (n < TRANSACTION_DEJAVU_NUMBER_OF_HASH_INVOCATIONS) {
+      for (let j = 0; j < TRANSACTION_DEJAVU_NUMBER_OF_HASH_INVOCATIONS; j++) {
+        K12(i === 0 ? transaction : dejavuDigest, dejavuDigest, 8);
+        const k = Number((new DataView(dejavuDigest.buffer).getBigUint64(0, true) * BigInt(TRANSACTION_DEJAVU_BIT_LENGTH)) / 0xFFFFFFFFFFFFFFFFn);
         dejavu.transactions[Math.floor(k / 8)] |= (0x01 << (k - 8 * Math.floor(k / 8)));
       }
+
       let count = 0;
       const f = function () {
         for (let j = 0; j < NUMBER_OF_CHANNELS; j++) {
           if (i !== j) {
             if (channels[j]?.readyState === 'open') {
               channels[j].send(data);
+              info.transmittedBytes += data.byteLength;
               if (typeof callback === 'function') {
                 callback();
               }
@@ -249,11 +270,15 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
     }
   };
 
+  const requestEntity = function (data, callback) {
+
+  };
+
   return function() {
     const that = this;
 
     const channel = function (i) {
-      const socket = new WebSocket(`wss://${signalingServers[0] /* TODO: support many servers */}`);
+      const socket = new WebSocket(`ws://${signalingServers[0] /* TODO: support many servers */}`);
       socket.binaryType = 'arraybuffer';
 
       let pc
@@ -344,12 +369,16 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
                 if (store.computors !== undefined) {
                   if (dc.readyState === 'open') {
                     dc.send(store.computors.buffer);
+                    info.transmittedBytes += size(store.computors.buffer.byteLength);
                   }
                 }
 
-                for (const resourceTestSolution of store.resourceTestSolutions.values()) {
-                  if (dc.readyState === 'open') {
-                    //dc.send(resourceTestSolution);
+                for (const solutions of store.resourceTestSolutions.values()) {
+                  for (const solution of solutions) {
+                    if (dc.readyState === 'open') {
+                      //dc.send(solution);
+                      //info.transmittedBytes += size(solution.buffer.byteLength);
+                    }
                   }
                 }
 
@@ -357,6 +386,7 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
                   if (tick !== undefined) {
                     if (dc.readyState === 'open') {
                      dc.send(tick.buffer);
+                     info.transmittedBytes += size(tick.buffer.byteLength);
                     }
                   }
                 }
@@ -371,11 +401,23 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
 
               dc.onmessage = async function (event) {
                 if ((event.data instanceof ArrayBuffer) === false) {
+                  info.discardedBytes += new Blob([event.data]).size;
+                  that.emit('info', Object.freeze({ ...info }));
                   return closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
                 }
+
                 const dataView = new DataView(event.data);
+
+                if (event.data.byteLength !== size(dataView)) {
+                  info.discardedBytes += event.data.byteLength; 
+                  that.emit('info', Object.freeze({ ...info }));
+                  return closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
+                }
+
                 if (dataView[`getUint${PROTOCOL_VERSION_LENGTH * 8}`](PROTOCOL_VERSION_OFFSET, true) !== protocol) {
-                  return closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);;
+                  info.discardedBytes += event.data.byteLength;
+                  that.emit('info', Object.freeze({ ...info }));
+                  return closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
                 }
 
                 clearTimeout(inactiveChannelTimeout);
@@ -387,51 +429,48 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
 
                 that.emit('message', data);
 
+                info.receivedBytes += event.data.byteLength;
+                that.emit('info', Object.freeze({ ...info }));
+
                 switch (dataView[`getUint${TYPE_LENGTH * 8}`](TYPE_OFFSET, true)) {
                   case MESSAGE_TYPES.BROADCAST_COMPUTORS:
                     that.emit('computors', {
-                      computors: data,
+                      computors: data.slice(HEADER_LENGTH),
                       channel: i,
                       propagate: function () {
                         propagateComputors(i, event.data);
+                        that.emit('info', Object.freeze({ ...info }));
                       },
                       closeAndReconnect: function () {
+                        info.discardedBytes += size(data);
+                        that.emit('info', Object.freeze({ ...info }));
                         closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
                       },
                     });
                     break;
-
-                  case MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION:
-                    that.emit('resource-test-solution', {
-                      resourceTestSolution: data,
-                      closeAndReconnect: function () {
-                        closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
-                      },
-                      propagate: function (digest) {
-                        propagateResourceTestingSolution(i, digest, event.data);
-                      }
-                    });
-                    break;
-
                   case MESSAGE_TYPES.BROADCAST_TICK:
                     that.emit('tick', {
-                      tick: data,
+                      tick: data.slice(HEADER_LENGTH),
                       closeAndReconnect: function () {
+                        info.discardedBytes += size(data);
                         closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
                       },
                       propagate: function (computorIndex, tick) {
                        propagateTick(i, event.data, computorIndex, tick);
+                       that.emit('info', Object.freeze({ ...info }));
                       }
                     });
                     break;
                   case MESSAGE_TYPES.BROADCAST_TRANSACTION:
                     that.emit('transaction', {
-                      transaction: data,
+                      transaction: data.slice(HEADER_LENGTH),
                       closeAndReconnect: function () {
+                        info.discardedBytes += size(data);
                         closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
                       },
                       propagate: function () {
                         propagateTransaction(i, event.data);
+                        that.emit('info', Object.freeze({ ...info }));
                       },
                     })
                     console.log('Received transaction', data);
@@ -441,8 +480,14 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
               };
             }
 
+            const iceServersCopy = iceServers.slice();
             pc = new RTCPeerConnection({
-              iceServers: iceServers.map(function (iceServer) {
+              iceServers: [
+                iceServersCopy.splice(Math.floor(Math.random() * iceServersCopy.length), 1),
+                iceServersCopy.splice(Math.floor(Math.random() * iceServersCopy.length), 1)
+              ].filter(function (iceServer) {
+                return iceServer !== undefined;
+              }).map(function (iceServer) {
                 return {
                   urls: [
                     iceServer,
@@ -567,14 +612,14 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
           case MESSAGE_TYPES.BROADCAST_COMPUTORS:
             propagateComputors(-1, data.buffer, callback);
             break;
-          case MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION:
-            propagateResourceTestingSolution(-1, data.buffer, undefined, callback);
-            break;
           case MESSAGE_TYPES.BROADCAST_TICK:
             propagateTick(-1, data.buffer, undefined, undefined, callback);
             break;
           case MESSAGE_TYPES.BROADCAST_TRANSACTION:
             propagateTransaction(-1, data.buffer, callback);
+            break;
+          case MESSAGE_TYPES.REQUEST_ENTITY:
+            requestEntity(data.buffer, callback);
             break;
         }
       }
@@ -584,6 +629,7 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
       for (let i = 0; i < NUMBER_OF_CHANNELS; i++) {
         if (channels[i]?.readyState === 'open') {
           channels[i].send(data.buffer);
+          info.transmittedBytes += data.buffer.byteLength;
         }
       }
     };
@@ -594,13 +640,21 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
       }
     };
 
+    const getInfo = function () {
+      return Object.freeze({
+        ...info,
+        numberOfChannels: NUMBER_OF_CHANNELS,
+        numberOfOpenChannels: channels.filter(channel => channel?.readyState === 'open' || channel?.readyState === 'closing').length,
+      });
+    };
+
     return Object.assign(
       this,
       {
         launch,
         broadcast,
         rebroadcast,
-        clearResourceTestSolutionsDejavu,
+        getInfo,
         shutdown,
       },
       EventEmitter.prototype
