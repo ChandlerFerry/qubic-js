@@ -153,7 +153,7 @@ const TRANSACTION_DEJAVU_NUMBER_OF_HASH_INVOCATIONS = Math.round(-Math.log(TRANS
 const NUMBER_OF_TRANSACTION_REBROADCASTINGS = 5;
 const TRANSACTION_REBROADCAST_TIMEOUT = 1000;
 
-export const gossip = function ({ signalingServers, iceServers, store, protocol }) {
+export const gossip = function ({ signalingServers, iceServers, protocol }) {
   const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription } = wrtc;
 
   const channels = Array(NUMBER_OF_CHANNELS);
@@ -366,30 +366,30 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
                   }, MAX_ROTATING_CHANNEL_DURATION);
                 }
 
-                if (store.computors !== undefined) {
-                  if (dc.readyState === 'open') {
-                    dc.send(store.computors.buffer);
-                    info.transmittedBytes += size(store.computors.buffer.byteLength);
-                  }
-                }
+                // if (store.computors !== undefined) {
+                //   if (dc.readyState === 'open') {
+                //     dc.send(store.computors.buffer);
+                //     info.transmittedBytes += size(store.computors.buffer.byteLength);
+                //   }
+                // }
 
-                for (const solutions of store.resourceTestSolutions.values()) {
-                  for (const solution of solutions) {
-                    if (dc.readyState === 'open') {
-                      //dc.send(solution);
-                      //info.transmittedBytes += size(solution.buffer.byteLength);
-                    }
-                  }
-                }
+                // for (const solutions of store.resourceTestSolutions.values()) {
+                //   for (const solution of solutions) {
+                //     if (dc.readyState === 'open') {
+                //       //dc.send(solution);
+                //       //info.transmittedBytes += size(solution.buffer.byteLength);
+                //     }
+                //   }
+                // }
 
-                for (const tick of store.ticks) {
-                  if (tick !== undefined) {
-                    if (dc.readyState === 'open') {
-                     dc.send(tick.buffer);
-                     info.transmittedBytes += size(tick.buffer.byteLength);
-                    }
-                  }
-                }
+                // for (const tick of store.ticks) {
+                //   if (tick !== undefined) {
+                //     if (dc.readyState === 'open') {
+                //      dc.send(tick.buffer);
+                //      info.transmittedBytes += size(tick.buffer.byteLength);
+                //     }
+                //   }
+                // }
               };
               dc.onclose = function () {
                 console.log(`Peer ${i} disconnected. Finding new peer...`);
