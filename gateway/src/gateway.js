@@ -64,16 +64,16 @@ const COMPUTORS_PUBLIC_KEYS_OFFSET = HEADER_LENGTH + 2;
 
 const NUMBER_OF_AVAILABLE_PROCESSORS = process.env.NUMBER_OF_AVAILABLE_PROCESSORS || 3;
 const QUBIC_PORT = process.env.QUBIC_PORT || 21841;
-const QUBIC_PROTOCOL = parseInt(process.env.QUBIC_PROTOCOL) || 155;
+const QUBIC_PROTOCOL = parseInt(process.env.QUBIC_PROTOCOL) || 163;
 const NUMBER_OF_COMPUTOR_CONNECTIONS = parseInt(process.env.NUMBER_OF_COMPUTOR_CONNECTIONS) || 4;
-const COMPUTORS = (process.env.COMPUTORS || '0.0.0.0').split(',').map(s => s.trim());
+const COMPUTORS = (process.env.COMPUTORS || '136.243.36.246').split(',').map(s => s.trim());
 const COMPUTOR_CONNECTION_TIMEOUT_MULTIPLIER = 1000;
 const NUMBER_OF_EXCHANGED_PEERS = 4;
 const PEER_MATCHER = process.env.PEER_MATCHER || '0.0.0.0:8081';
-const ICE_SERVER = process.env.ICE_SERVER || 'stun:0.0.0.0:3478';
+const ICE_SERVER = process.env.ICE_SERVER || "stun:stun.services.mozilla.com:3478";
 
 const NUMBER_OF_NEURONS = parseInt(process.env.NUMBER_OF_NEURONS) || 1048576;
-const SOLUTION_THRESHOLD = parseInt(process.env.SOLUTION_THRESHOLD) || 23;
+const SOLUTION_THRESHOLD = parseInt(process.env.SOLUTION_THRESHOLD) || 22;
 
 MESSAGE_TYPES.EXCHANGE_PUBLIC_PEERS = 0;
 MESSAGE_TYPES.REQUEST_COMPUTORS = 11;
@@ -101,15 +101,14 @@ const gateway = function () {
   const processComputors = computorsProcessor(system, NUMBER_OF_COMPUTOR_CONNECTIONS);
 
   const randomSeed = new Uint8Array(32).fill(0);
-  const envRandomSeed = (process.env.RANDOM_SEED || '').split(',').map(value => parseInt(value));
-  randomSeed[0] = envRandomSeed[0] || 146;
-  randomSeed[1] = envRandomSeed[1] || 17;
-  randomSeed[2] = envRandomSeed[2] || 33;
-  randomSeed[3] = envRandomSeed[3] || 72;
-  randomSeed[4] = envRandomSeed[4] || 117;
-  randomSeed[5] = envRandomSeed[5] || 17;
-  randomSeed[6] = envRandomSeed[6] || 77;
-  randomSeed[7] = envRandomSeed[7] || 81;
+  randomSeed[0] = 1;
+  randomSeed[1] = 0;
+  randomSeed[2] = 233;
+  randomSeed[3] = 9;
+  randomSeed[4] = 136;
+  randomSeed[5] = 69;
+  randomSeed[6] = 43;
+  randomSeed[7] = 139;
 
   const { resourceTest, setResourceTestParameters } = resourceTester();
   setResourceTestParameters({
