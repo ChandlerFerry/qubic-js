@@ -504,7 +504,7 @@ export const gossip = function ({ signalingServers, iceServers, protocol }) {
                 closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
               }
             };
-      
+
             pc.ondatachannel = function ({ channel }) {
               const signal = new Uint8Array(1);
               const signalView = new DataView(signal.buffer);
@@ -557,7 +557,7 @@ export const gossip = function ({ signalingServers, iceServers, protocol }) {
           case SIGNAL_TYPES.SESSION_DESCRIPTION:
             const sessionDescription = JSON.parse(new TextDecoder().decode(event.data.slice(1)));
             if (sessionDescription.type === 'offer') {
-              ;(pc !== undefined ? (pc.signalingState !== 'stable'
+              ;(pc !== undefined ? ((pc.signalingState !== 'stable' && pc.signalingState !== 'closed')
                 ? Promise.all([
                   pc?.setLocalDescription({ type: 'rollback' }),
                   pc?.setRemoteDescription(new RTCSessionDescription(sessionDescription)),
@@ -581,8 +581,8 @@ export const gossip = function ({ signalingServers, iceServers, protocol }) {
                     }
                   })
                   .catch(console.log);
-            } else if (sessionDescription.type === 'answer') {
-              pc?.setRemoteDescription(new RTCSessionDescription(sessionDescription)).catch(console.log);
+            } else if (sessionDescription.type === 'answer' && pc !== undefined && pc.signalingState !== 'closed') {
+              pc.setRemoteDescription(new RTCSessionDescription(sessionDescription)).catch(console.log);
             }
             break;
         }
