@@ -55,7 +55,7 @@ import cluster from 'node:cluster';
 import net from 'node:net';
 import crypto from 'qubic-crypto';
 import { gossip, MESSAGE_TYPES, PROTOCOL_VERSION_OFFSET, TYPE_OFFSET, HEADER_LENGTH, NUMBER_OF_CHANNELS, TICK_COMPUTOR_INDEX_LENGTH, TICK_COMPUTOR_INDEX_OFFSET, TICK_TICK_LENGTH, TICK_TICK_OFFSET, size, request } from 'qubic-gossip';
-import { publicKeyBytesToString, stringToPublicKeyBytes } from 'qubic-converter';
+import { publicKeyBytesToString } from 'qubic-converter';
 import { NUMBER_OF_COMPUTORS, initSystem, computorsProcessor, processTick, resourceTester } from '451';
 
 const LE = true;
@@ -72,7 +72,7 @@ const NUMBER_OF_EXCHANGED_PEERS = 4;
 const PEER_MATCHER = process.env.PEER_MATCHER || '0.0.0.0:8081';
 const ICE_SERVER = process.env.ICE_SERVER || "stun:stun.services.mozilla.com:3478";
 
-const NUMBER_OF_NEURONS = parseInt(process.env.NUMBER_OF_NEURONS) || 1048576;
+const NUMBER_OF_NEURONS = parseInt(process.env.NUMBER_OF_NEURONS) || 4194304;
 const SOLUTION_THRESHOLD = parseInt(process.env.SOLUTION_THRESHOLD) || 22;
 
 MESSAGE_TYPES.EXCHANGE_PUBLIC_PEERS = 0;
