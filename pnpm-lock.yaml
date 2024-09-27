@@ -1,5 +1,9 @@
 lockfileVersion: '6.0'
 
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
 importers:
 
   '451':
@@ -63,6 +67,12 @@ importers:
       ws:
         specifier: ^8.12.0
         version: 8.12.0
+
+  zzz:
+    dependencies:
+      '451':
+        specifier: workspace:*
+        version: link:../451
 
 packages:
 
@@ -483,6 +493,7 @@ packages:
 
   /webidl-conversions@4.0.2:
     resolution: {integrity: sha512-YQ+BmxuTgd6UXZW3+ICGfyqRyHXVlD5GtQr5+qjiNW7bF0cqrzX500HVXPBOvgXb5YnzDd+h0zqyv61KUD7+Sg==}
+    requiresBuild: true
     dev: false
     optional: true
 

@@ -93,7 +93,7 @@ export const entity = function (system, broadcastTransaction) {
               if (tick === undefined && system.latestTick().tick === undefined) {
                 return new Promise(function (resolve) {
                   setTimeout(function () {
-                    resolve(entityTransaction({ destination, energy, inputType, input }));
+                    resolve(transaction({ destination, energy, inputType, input }));
                   }, 1000);
                 });
               } else if (tick <= system.latestTick().tick) {

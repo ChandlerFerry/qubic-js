@@ -1,0 +1,14 @@
+{
+  "dependencies": {
+    "451": "workspace:*"
+  },
+  "description": "",
+  "keywords": [],
+  "main": "./src/test.js",
+  "name": "qubic-zzz",
+  "scripts": {
+    "test": "node ./src/test.js"
+  },
+  "type": "module",
+  "version": "0.0.0"
+}

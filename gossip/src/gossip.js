@@ -54,6 +54,7 @@ import EventEmitter from 'events';
 import WebSocket from 'isomorphic-ws';
 import wrtc from 'wrtc';
 import crypto from 'qubic-crypto';
+import { getRandomValues } from "node:crypto";
 
 export const NUMBER_OF_CHANNELS = 4;
 const MIN_WEBRTC_CONNECTION_ATTEMPT_DURATION = 6 * 1000;
@@ -113,7 +114,7 @@ export const zeroDejavu = function (request) {
 };
 
 export const randomizeDezavu = function (request) {
-  const random = globalThis.crypto.getRandomValues(new Uint32Array(1))[0];
+  const random = getRandomValues(new Uint32Array(1))[0];
   request[DEJAVU_OFFSET] = random;
   request[DEJAVU_OFFSET + 1] = random >> 8;
   request[DEJAVU_OFFSET + 2] = random >> 16;
